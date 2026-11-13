@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Water Monitor</title>
+  <style>
+/* ===== Theme ===== */
+:root {
+  --bg: #0a1a30;
+  --sidebar: #081528;
+  --card: #0f2442;
+  --text: #e8f0fa;
+  --muted: #8da4c0;
+  --border: #1b3558;
+  --ok: #22c55e;
+  --warn: #f59e0b;
+  --bad: #ef4444;
+  --accent: #2aa8ff;
+}
+
+/* ===== Base (text scales with the screen so big screens are filled) ===== */
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: clamp(14px, 0.95vw, 18px) / 1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+h1 { font-size: 1.4em; margin: 0; }
+h2 { font-size: 1.05em; margin: 0 0 10px; }
+.muted { color: var(--muted); font-size: 0.85em; }
+
+/* ===== Buttons & inputs ===== */
+button, input, select {
+  font: inherit;
+  padding: 0.5em 0.8em;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #0b1d37;
+  color: var(--text);
+}
+
+button { cursor: pointer; background: var(--accent); color: #06182c; border: 0; font-weight: 600; }
+button.secondary { background: var(--border); color: var(--text); }
+button:disabled { opacity: 0.6; cursor: wait; }
+
+/* ===== Login screen ===== */
+#auth {
+  max-width: 400px;
+  margin: 8vh auto 0;
+  padding: 20px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+#auth input, #auth select, #auth button { width: 100%; margin-top: 8px; }
+.tabs { display: flex; gap: 6px; margin-top: 12px; }
+.tabs button { margin: 0; }
+.error { color: var(--bad); min-height: 18px; margin-top: 6px; font-size: 0.9em; }
+.info  { color: var(--ok); margin-top: 6px; font-size: 0.9em; }
+
+/* ===== Layout: sidebar + main (main fills the whole screen height) ===== */
+#app { display: flex; min-height: 100vh; }
+
+aside {
+  width: 14em;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  padding: 16px 10px;
+  background: var(--sidebar);
+}
+
+main {
+  flex: 1;
+  min-width: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px;
+}
+
+/* The page area stretches to take all remaining height */
+.page { flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.fill { flex: 1; min-height: 260px; }
+
+.brand { padding: 4px 8px 16px; font-size: 1.1em; font-weight: 800; color: var(--accent); }
+.brand small { display: block; font-size: 0.7em; font-weight: 400; color: var(--muted); }
+.brand-large { font-size: 1.4em; padding: 0; }
+
+nav button {
+  display: block;
+  width: 100%;
+  margin-bottom: 3px;
+  padding: 0.65em 0.8em;
+  text-align: left;
+  background: none;
+  color: var(--muted);
+  font-weight: 500;
+}
+nav button.active { background: var(--card); color: var(--text); }
+
+.top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+
+/* Data status pill: colour comes from --c, set by updateStatusPill() */
+.status-pill {
+  display: inline-flex; align-items: center; gap: 0.5em; flex-wrap: wrap;
+  max-width: 100%; margin-right: 10px; padding: 0.3em 0.9em;
+  font-size: 0.85em; color: var(--muted);
+  border: 1px solid var(--c, var(--border)); border-radius: 99px;
+  background: transparent;
+  background: color-mix(in srgb, var(--c, var(--border)) 14%, transparent);
+}
+.status-pill .dot { width: 0.7em; height: 0.7em; border-radius: 50%; background: var(--c, var(--muted)); flex-shrink: 0; }
+.status-pill .status-label { color: var(--c); }
+.status-pill[data-state="connected"] .dot,
+.status-pill[data-state="online"] .dot { animation: pulse 1.6s ease-out infinite; }
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--c) 70%, transparent); }
+  100% { box-shadow: 0 0 0 0.6em transparent; }
+}
+@media (prefers-reduced-motion: reduce) { .status-pill .dot { animation: none !important; } }
+
+.badge {
+  padding: 2px 12px;
+  border-radius: 99px;
+  background: var(--accent);
+  color: #06182c;
+  font-size: 0.85em;
+  font-weight: 700;
+}
+
+/* ===== Cards & grids ===== */
+.card, .banner {
+  padding: 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.banner { border: 0; padding: 18px; text-align: center; font-size: 1.6em; font-weight: 700; color: #fff; }
+
+.grid  { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+
+/* Cards that must fill their space: content stretches inside */
+.card.fill, .grid2.fill .card { display: flex; flex-direction: column; }
+.grid2.fill { align-items: stretch; }
+
+.stat { padding: 14px 16px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; }
+.stat > span { color: var(--muted); font-size: 0.85em; }
+.stat b { display: block; font-size: clamp(22px, 2.1vw, 40px); }
+.stat i { font-size: 0.8em; font-style: normal; color: var(--muted); }
+
+.bar { height: 8px; margin-top: 8px; background: var(--border); border-radius: 9px; overflow: hidden; }
+.bar u { display: block; height: 100%; }
+
+/* ===== Charts (grow to fill the card) ===== */
+.chart { flex: 1; min-height: 160px; }
+.chart svg { display: block; width: 100%; height: 100%; }
+
+.bars { flex: 1; min-height: 220px; display: grid; grid-template-columns: repeat(7, 1fr); gap: 2%; }
+.bar-col { position: relative; }
+.bar-col .col {
+  position: absolute; left: 22%; right: 22%; bottom: 2em;
+  height: calc((100% - 4.4em) * var(--h));
+  background: var(--accent); border-radius: 4px 4px 0 0;
+}
+.bar-col .val { position: absolute; left: 0; right: 0; text-align: center; font-size: 0.8em; color: var(--muted);
+  bottom: calc(2.2em + (100% - 4.4em) * var(--h)); }
+.bar-col .day { position: absolute; left: 0; right: 0; bottom: 0; text-align: center; }
+
+/* ===== Tables (scroll inside the card) ===== */
+.scroll { flex: 1; min-height: 0; overflow: auto; }
+.scroll th { position: sticky; top: 0; background: var(--card); }
+.card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.card-head h2 { margin: 0; }
+tr.flash td { animation: flash 3s ease-out; }  /* a reading that just arrived */
+@keyframes flash { from { background: color-mix(in srgb, var(--accent) 35%, transparent); } to { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { tr.flash td { animation: none; } }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 0.55em 0.8em; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+th { font-size: 0.85em; font-weight: 500; color: var(--muted); }
+
+/* ===== Forms inside cards ===== */
+.fields { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 10px; }
+label { font-size: 0.85em; color: var(--muted); }
+label input { display: block; width: 8em; margin-top: 3px; }
+label input.wide { width: 16em; }
+
+/* ===== Phones: sidebar becomes a top bar ===== */
+@media (max-width: 700px) {
+  #app { flex-direction: column; }
+  aside { width: 100%; height: auto; position: static; }
+  nav { display: flex; gap: 4px; overflow-x: auto; }
+  nav button { width: auto; white-space: nowrap; }
+}
+
+  </style>
+</head>
+<body>
+
+  <!-- Login / Create account -->
+  <section id="auth" hidden>
+    <div class="brand brand-large">💧 WATER MONITOR</div>
+
+    <div class="tabs">
+      <button id="tab-login">Log in</button>
+      <button id="tab-signup" class="secondary">Create account</button>
+    </div>
+
+    <input id="name" placeholder="Full name" hidden>
+    <input id="email" type="email" placeholder="Email">
+    <input id="password" type="password" placeholder="Password (min 6 characters)">
+    <select id="role" hidden>
+      <option value="user">I am a User</option>
+      <option value="admin">I am an Admin</option>
+    </select>
+    <button id="send-code" class="secondary" hidden>Send code to my Gmail</button>
+    <input id="admin-code" inputmode="numeric" placeholder="6-digit code from your email" hidden>
+
+    <button id="submit">Log in</button>
+    <div id="info" class="info"></div>
+    <div id="error" class="error"></div>
+  </section>
+
+  <!-- Dashboard (shown after login) -->
+  <div id="app" hidden>
+    <aside>
+      <div class="brand">💧 WATER MONITOR<small>Quality &amp; consumption</small></div>
+      <nav id="nav"></nav>
+    </aside>
+    <main id="main"></main>
+  </div>
+
+  <script>
+/* Water Monitor - app logic
+   Accounts, readings and safety limits live on the server (see server.js).
+   The browser talks to it through the small api() helper below. */
+
+// ===================== Settings =====================
+const REFRESH_SECONDS = 10;      // backup polling (live updates normally arrive instantly through /api/stream)
+const STREAM_SILENCE_SECONDS = 12;          // server sends a heartbeat every 5 s; silence this long = connection lost
+const DEFAULT_DEVICE_TIMEOUT_MS = 30000;    // used until the server tells us the real timeout
+const CACHE_KEY = "wm_cache";    // last good data, kept in this browser so the page still shows something offline
+
+const DEFAULT_LIMITS = { phmin: 6.5, phmax: 8.5, tds: 500, ntu: 5, temp: 35 };
+
+// Fields shown in the admin "Safety limits" form: [key, label, step]
+const LIMIT_FIELDS = [
+  ["phmin", "pH min", 0.1],
+  ["phmax", "pH max", 0.1],
+  ["tds",   "TDS max (ppm)", 1],
+  ["ntu",   "Turbidity max (NTU)", 0.1],
+  ["temp",  "Temp max (°C)", 1],
+];
+
+// Water status levels: 0 = Good, 1 = Watch (near a limit), 2 = Bad (outside a limit)
+const STATUS = [
+  { name: "Good",  color: "var(--ok)" },
+  { name: "Watch", color: "var(--warn)" },
+  { name: "Bad",   color: "var(--bad)" },
+];
+
+// ===================== Small helpers =====================
+const $ = (id) => document.getElementById(id);
+
+// Escape text before putting it in HTML (prevents users injecting code through their name)
+const escapeHtml = (text) =>
+  String(text).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const formatTime = (ts, seconds = false) =>
+  new Date(ts).toLocaleString("en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", ...(seconds && { second: "2-digit" }) });
+
+// Talk to the backend. Throws an Error with the server's message if something goes wrong.
+async function api(path, method = "GET", body) {
+  let response;
+  try {
+    response = await fetch("/api" + path, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new Error("Can't reach the server."); // no .status = network problem
+  }
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(json.error || "Request failed (" + response.status + ")");
+    error.status = response.status;
+    throw error;
+  }
+  return json;
+}
+
+// ===================== State =====================
+let authMode = "login";       // "login" or "signup"
+let adminMode = "first";      // how admins are made, told by the server: "email", "secret" or "first"
+let currentUser = null;       // { email, name, role }
+let currentView = "dashboard";
+let refreshTimer = null;
+let serverOnline = true;      // false when the server can't be reached (we then show saved data)
+let flashTs = null;           // timestamp of the reading that just arrived (its table row flashes briefly)
+let lastRenderedView = null;  // used to keep the table's scroll position when it refreshes
+
+// Live link to the server (filled in by the /api/stream events)
+let stream = null;            // the EventSource
+let streamRetry = null;       // timer used when the browser gives up on the stream
+const link = {
+  known: false,               // have we heard the server's device status yet?
+  ageAtReceive: null,         // how long ago the ESP32 last contacted the server, when we heard (null = never)
+  receivedAt: 0,              // when we heard it (browser clock)
+  lastBeat: 0,                // last message of any kind from the server
+  timeoutMs: DEFAULT_DEVICE_TIMEOUT_MS,
+};
+
+// Data copied from the server (so the page builders below can stay simple and synchronous)
+const data = { readings: [], limits: { ...DEFAULT_LIMITS }, users: [] };
+
+// ===================== Login / sign up =====================
+function setAuthMode(mode) {
+  authMode = mode;
+  const signup = mode === "signup";
+
+  $("name").hidden = !signup;
+  $("role").hidden = !signup;
+  const adminSignup = signup && $("role").value === "admin";
+  $("send-code").hidden = !(adminSignup && adminMode === "email");
+  $("admin-code").hidden = !(adminSignup && adminMode !== "first");
+  $("admin-code").type = adminMode === "email" ? "text" : "password";
+  $("admin-code").placeholder = adminMode === "email" ? "6-digit code from your email" : "Admin secret";
+
+  $("submit").textContent = signup ? "Create account" : "Log in";
+  $("tab-login").className = signup ? "secondary" : "";
+  $("tab-signup").className = signup ? "" : "secondary";
+  $("error").textContent = "";
+  $("info").textContent = "";
+}
+
+// Ask the server to email a 6-digit code to the person who wants to be an admin
+async function sendAdminCode() {
+  const email = $("email").value.trim().toLowerCase();
+  $("error").textContent = "";
+  $("info").textContent = "";
+  if (!/^\S+@\S+\.\S+$/.test(email)) { $("error").textContent = "Type your email first."; return; }
+
+  $("send-code").disabled = true;
+  try {
+    const result = await api("/auth/send-code", "POST", { email });
+    $("info").textContent = result.message;
+  } catch (err) {
+    $("error").textContent = err.message;
+  } finally {
+    $("send-code").disabled = false;
+  }
+}
+
+async function submitAuth() {
+  const email = $("email").value.trim().toLowerCase();
+  const password = $("password").value;
+  const fail = (message) => { $("error").textContent = message; };
+
+  $("error").textContent = "";
+  if (!/^\S+@\S+\.\S+$/.test(email)) return fail("Enter a valid email.");
+  if (password.length < 6) return fail("Password must be at least 6 characters.");
+
+  $("submit").disabled = true;
+  try {
+    let result;
+    if (authMode === "signup") {
+      const name = $("name").value.trim();
+      if (!name) return fail("Enter your name.");
+      result = await api("/auth/signup", "POST", {
+        email, password, name,
+        role: $("role").value,
+        code: $("admin-code").value.trim(),
+      });
+    } else {
+      result = await api("/auth/login", "POST", { email, password });
+    }
+    await startSession(result.user);
+  } catch (err) {
+    fail(err.message);
+  } finally {
+    $("submit").disabled = false;
+  }
+}
+
+async function startSession(user) {
+  currentUser = user;
+  currentView = "dashboard";
+  data.readings = [];
+  await refreshData();
+
+  $("auth").hidden = true;
+  $("app").hidden = false;
+  $("password").value = "";
+  $("admin-code").value = "";
+  render();
+
+  clearInterval(refreshTimer);
+  refreshTimer = setInterval(autoRefresh, REFRESH_SECONDS * 1000);
+  startStream();
+}
+
+function showLogin() {
+  clearInterval(refreshTimer);
+  stopStream();
+  try { localStorage.removeItem(CACHE_KEY); } catch { /* storage blocked */ }
+  currentUser = null;
+  $("app").hidden = true;
+  $("auth").hidden = false;
+  setAuthMode("login");
+}
+
+async function logout() {
+  try { await api("/auth/logout", "POST"); } catch { /* leaving anyway */ }
+  showLogin();
+}
+
+// ===================== Data =====================
+const getLimits = () => ({ ...DEFAULT_LIMITS, ...data.limits });
+const getReadings = () => data.readings; // newest first
+const isAdmin = () => currentUser?.role === "admin";
+
+// One reading looks like: { ts, ph, tds, ntu, temp, flow, total }
+// (ntu = turbidity, flow = L/min, total = meter total in liters)
+
+// Fake readings shown when the device has never sent anything and the server says SEED_DEMO is not "true".
+// They live only in the browser (never saved) and are replaced the moment a real reading arrives.
+let demoFallback = false;   // told by the server (/api/config)
+let demoMode = false;       // true while fake readings are on screen
+const configReady = api("/config").then((c) => { adminMode = c.adminMode; demoFallback = !!c.demoFallback; }).catch(() => {});
+
+function demoReadings() {
+  let seed = 12345;
+  const random = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
+  const now = Date.now(), FOUR_HOURS = 4 * 3600 * 1000, list = [];
+  let total = 0;
+  for (let i = 41; i >= 0; i--) {
+    const flow = +(random() * 14).toFixed(1);
+    total += flow * 5;
+    list.push({
+      ts: now - i * FOUR_HOURS,
+      ph: +(6.9 + random() * 0.8).toFixed(2),
+      tds: Math.round(120 + random() * 150),
+      ntu: +(random() * 2).toFixed(1),
+      temp: +(26 + random() * 3).toFixed(1),
+      flow,
+      total: +total.toFixed(1),
+    });
+  }
+  return list.reverse(); // newest first
+}
+
+function applyDemoIfEmpty() {
+  demoMode = false;
+  if (demoFallback && !data.readings.length) { data.readings = demoReadings(); demoMode = true; }
+}
+
+// Zero reading used on Dashboard / Quality / Quantity when the device has never sent data
+const ZERO_READING = { ts: 0, ph: 0, tds: 0, ntu: 0, temp: 0, flow: 0, total: 0 };
+
+function saveCache() {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ user: currentUser, readings: data.readings, limits: data.limits }));
+  } catch { /* storage full or blocked: not important */ }
+}
+
+function loadCache() {
+  try { return JSON.parse(localStorage.getItem(CACHE_KEY)); } catch { return null; }
+}
+
+// Download the latest readings, limits (and the account list for admins) from the server.
+// If the server can't be reached, keep showing the data we already have.
+async function refreshData() {
+  await configReady;
+  try {
+    const [readings, limits, users] = await Promise.all([
+      api("/readings?limit=300"),
+      api("/limits"),
+      isAdmin() ? api("/users") : { users: [] },
+    ]);
+    data.readings = readings.readings;
+    data.limits = limits.limits;
+    data.users = users.users;
+    serverOnline = true;
+    if (data.readings.length) saveCache(); // real readings only
+  } catch (err) {
+    if (err.status === 401) { showLogin(); return; } // session expired
+    if (err.status === undefined) {
+      serverOnline = false;
+      if (!data.readings.length) { // nothing loaded yet: fall back to what we saved last time
+        const cache = loadCache();
+        if (cache) { data.readings = cache.readings || []; data.limits = cache.limits || {}; }
+      }
+    }
+  }
+  applyDemoIfEmpty();
+  updateStatusPill();
+}
+
+// ===================== Live data status =====================
+// Two main states, updated in real time:
+//   Offline  server unreachable, or ESP32 not connected recently   (red)
+//   Online   ESP32 contacted the server within the timeout         (green)
+// The server keeps one connection open (/api/stream) and pushes changes to us, so the pill
+// changes within about a second. A 1-second timer only moves the "x s ago" counter.
+
+// "4 s ago", "3 min ago", "2 h ago"
+function ago(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return s + " s ago";
+  if (s < 3600) return Math.floor(s / 60) + " min ago";
+  if (s < 86400) return Math.floor(s / 3600) + " h ago";
+  return Math.floor(s / 86400) + " d ago";
+}
+
+const deviceAge = () => (link.ageAtReceive === null ? null : link.ageAtReceive + (Date.now() - link.receivedAt));
+const deviceConnected = () => deviceAge() !== null && deviceAge() < link.timeoutMs;
+const isFormPage = () => currentView === "profile" || currentView === "admin"; // pages we never redraw under the user's typing
+
+function dataStatus() {
+  // Offline when the server can't be reached, or the ESP32 is not connected.
+  // Online only when the device has contacted the server within the timeout.
+  if (!serverOnline) return { state: "offline", label: "Offline", detail: "can't reach the server · showing saved data", color: "var(--bad)" };
+  if (!link.known && window.EventSource) return { state: "pending", label: "", detail: "", color: "var(--muted)" }; // hidden for the split second before the server answers
+  if (!link.known) { // very old browser without live updates: judge by the newest reading instead
+    const newest = demoMode ? null : getReadings()[0];
+    const fresh = newest && Date.now() - newest.ts < link.timeoutMs;
+    return fresh
+      ? { state: "online", label: "Online", detail: "device connected · last data " + ago(Date.now() - newest.ts), color: "var(--ok)" }
+      : { state: "offline", label: "Offline", detail: "device not connected", color: "var(--bad)" };
+  }
+  if (deviceConnected()) {
+    return { state: "online", label: "Online", detail: demoMode ? "device connected · waiting for its first reading" : "device connected · last data " + ago(deviceAge()), color: "var(--ok)" };
+  }
+
+  let detail = "device not connected";
+  const lastReading = demoMode ? null : getReadings()[0];
+  if (deviceAge() !== null) detail += " · last seen " + ago(deviceAge());
+  else if (lastReading) detail += " · last reading " + ago(Date.now() - lastReading.ts);
+  if (demoMode) detail += " · showing demo data";
+  return { state: "offline", label: "Offline", detail, color: "var(--bad)" };
+}
+
+function statusPillHtml() {
+  return `<span id="data-status" class="status-pill"><span class="dot"></span>Data status:
+    <b class="status-label" role="status"></b><span class="status-detail"></span></span>`;
+}
+
+// Updates only the pill (never the whole page), so it works on every page, even while typing in a form
+function updateStatusPill() {
+  const pill = $("data-status");
+  if (!pill) return;
+  const s = dataStatus();
+  const setText = (el, text) => { if (el.textContent !== text) el.textContent = text; };
+  pill.dataset.state = s.state;
+  const tip = `Online as soon as the device sends data. Offline after ${Math.round(link.timeoutMs / 1000)} s of silence of silence.`;
+  if (pill.title !== tip) pill.title = tip;
+  pill.style.visibility = s.state === "pending" ? "hidden" : ""; // keeps its space so nothing jumps
+  pill.style.setProperty("--c", s.color);
+  setText(pill.querySelector(".status-label"), s.label);
+  setText(pill.querySelector(".status-detail"), s.detail ? "· " + s.detail : "");
+}
+
+// The server told us about the ESP32 (sent on connect, every 5 s, and whenever it changes)
+function handleStatus(status) {
+  const wasOffline = !serverOnline;
+  serverOnline = true;
+  link.known = true;
+  link.ageAtReceive = status.deviceAgeMs;
+  link.receivedAt = link.lastBeat = Date.now();
+  link.timeoutMs = status.timeoutMs || DEFAULT_DEVICE_TIMEOUT_MS;
+  updateStatusPill();
+  if (wasOffline) resync(); // server just came back: load fresh data
+}
+
+// A new reading was saved: show it straight away (no waiting for the next poll)
+function handleLiveReading(reading) {
+  if (!currentUser) return;
+  if (demoMode) { data.readings = []; demoMode = false; } // first real reading replaces the fake ones
+  if (!data.readings.some((r) => r.ts === reading.ts)) {
+    flashTs = reading.ts;
+    setTimeout(() => { if (flashTs === reading.ts) flashTs = null; }, 3000);
+    data.readings.unshift(reading);
+    data.readings.length = Math.min(data.readings.length, 300);
+    saveCache();
+  }
+  if (!isFormPage()) render();
+}
+
+// An admin cleared the history (maybe on another device): empty it here too, right now
+function handleCleared() {
+  if (!currentUser) return;
+  try { localStorage.removeItem(CACHE_KEY); } catch { /* storage blocked */ }
+  data.readings = [];
+  flashTs = null;
+  applyDemoIfEmpty();
+  updateStatusPill();
+  if (!isFormPage()) render();
+}
+
+async function resync() {
+  await refreshData();
+  if (currentUser && !isFormPage()) render();
+}
+
+function startStream() {
+  stopStream();
+  if (!window.EventSource) return; // very old browser: the 10-second polling still works
+  const source = new EventSource("/api/stream");
+  stream = source;
+
+  const on = (name, handler) => source.addEventListener(name, (event) => {
+    try { handler(JSON.parse(event.data)); } catch { /* ignore a malformed message */ }
+  });
+  on("status", handleStatus);
+  on("reading", handleLiveReading);
+  on("cleared", handleCleared);
+
+  source.onerror = () => { // connection lost = server offline (the browser retries by itself)
+    serverOnline = false;
+    link.known = false;
+    updateStatusPill();
+    if (source.readyState === EventSource.CLOSED) { // browser gave up (e.g. login expired): check, then try again
+      source.close();
+      stream = null;
+      streamRetry = setTimeout(() => {
+        api("/me").then(startStream).catch((err) => (err.status === 401 ? showLogin() : startStream()));
+      }, 3000);
+    }
+  };
+}
+
+function stopStream() {
+  clearTimeout(streamRetry);
+  if (stream) stream.close();
+  stream = null;
+}
+
+// Runs every second: counts up "x s ago" and catches a connection that died silently (e.g. Wi-Fi dropped)
+function tick() {
+  if (!currentUser) return;
+  if (serverOnline && link.known && Date.now() - link.lastBeat > STREAM_SILENCE_SECONDS * 1000) {
+    serverOnline = false;
+    link.known = false;
+    startStream(); // reconnect; the status shows Offline until the server answers
+  }
+  updateStatusPill();
+}
+
+// Server unreachable when the page opened: show the last saved data instead of a blank screen
+function startOffline() {
+  const cache = loadCache();
+  if (!cache?.user) { showLogin(); $("error").textContent = "Can't reach the server."; return; }
+
+  currentUser = cache.user;
+  currentView = "dashboard";
+  data.readings = cache.readings || [];
+  data.limits = cache.limits || {};
+  data.users = [];
+  serverOnline = false;
+
+  $("auth").hidden = true;
+  $("app").hidden = false;
+  render();
+  clearInterval(refreshTimer);
+  refreshTimer = setInterval(autoRefresh, REFRESH_SECONDS * 1000);
+  startStream(); // reconnects by itself when the server is back, then reloads the data
+}
+
+// Runs every few seconds so new ESP32 readings show up without reloading.
+// Skips the forms pages so typing is never wiped.
+async function autoRefresh() {
+  if (!currentUser || document.hidden) return;
+  if (currentView === "profile" || currentView === "admin") return;
+  await refreshData();
+  if (currentUser) render();
+}
+
+// The 4 measured water-quality values and their limits
+function getParams() {
+  const l = getLimits();
+  return [
+    { label: "pH",          key: "ph",   unit: "",     min: l.phmin, max: l.phmax, scaleMin: 0, scaleMax: 14 },
+    { label: "TDS",         key: "tds",  unit: " ppm", min: 0,       max: l.tds,   scaleMin: 0, scaleMax: l.tds * 1.5 },
+    { label: "Turbidity",   key: "ntu",  unit: " NTU", min: 0,       max: l.ntu,   scaleMin: 0, scaleMax: l.ntu * 1.5 },
+    { label: "Temperature", key: "temp", unit: " °C",  min: 0,       max: l.temp,  scaleMin: 0, scaleMax: 50 },
+  ];
+}
+
+function levelOf(value, min, max) {
+  if (value < min || value > max) return 2;
+  const margin = (max - min) * 0.1;
+  const nearMin = min > 0 && value - min < margin;
+  const nearMax = max - value < margin;
+  return nearMin || nearMax ? 1 : 0;
+}
+
+const readingLevel = (r) => Math.max(...getParams().map((p) => levelOf(r[p.key], p.min, p.max)));
+
+const readingProblems = (r) =>
+  getParams()
+    .filter((p) => levelOf(r[p.key], p.min, p.max) === 2)
+    .map((p) => `${p.label} too ${r[p.key] < p.min ? "low" : "high"} (${r[p.key]})`);
+
+// Liters used per day for the last 7 days
+function dailyUsage() {
+  const oldestFirst = getReadings().slice().reverse();
+  const litersByDay = {};
+
+  oldestFirst.forEach((r, i) => {
+    if (i === 0) return;
+    const used = Math.max(0, r.total - oldestFirst[i - 1].total);
+    const day = new Date(r.ts).toDateString();
+    litersByDay[day] = (litersByDay[day] || 0) + used;
+  });
+
+  return [...Array(7)].map((_, i) => {
+    const date = new Date(Date.now() - (6 - i) * 24 * 3600 * 1000);
+    return {
+      label: date.toLocaleDateString("en", { weekday: "short" }),
+      liters: Math.round(litersByDay[date.toDateString()] || 0),
+    };
+  });
+}
+
+// ===================== HTML building blocks =====================
+const statCard = (label, value, unit) =>
+  `<div class="stat"><span>${label}</span><b>${value}${unit}</b></div>`;
+
+function statusBanner(reading) {
+  if (demoMode) {
+    return `<div class="banner" style="background:var(--border)">Demo data: no device connected</div>`;
+  }
+  if (!getReadings().length) {
+    return `<div class="banner" style="background:var(--border)">No device data yet</div>`;
+  }
+  const level = readingLevel(reading);
+  const colors = ["var(--ok)", "var(--warn)", "var(--bad)"];
+  const text = [
+    "✅ Water is SAFE",
+    "✅ SAFE — some values near the limit",
+    "⚠️ Water NOT SAFE — " + escapeHtml(readingProblems(reading).join(", ")),
+  ][level];
+  return `<div class="banner" style="background:${colors[level]}">${text}</div>`;
+}
+
+function readingsTable(readings, seconds = false) {
+  const rows = readings.map((r) => {
+    const status = STATUS[readingLevel(r)];
+    return `<tr class="${r.ts === flashTs ? "flash" : ""}">
+      <td>${formatTime(r.ts, seconds)}</td><td>${r.ph}</td><td>${r.tds}</td><td>${r.ntu}</td>
+      <td>${r.temp}</td><td>${r.flow}</td>
+      <td style="color:${status.color}">${status.name}</td>
+    </tr>`;
+  }).join("");
+
+  return `<div class="scroll"><table>
+    <tr><th>Time</th><th>pH</th><th>TDS</th><th>NTU</th><th>°C</th><th>L/min</th><th>Status</th></tr>
+    ${rows}
+  </table></div>`;
+}
+
+// Bars drawn with HTML so they stretch to fill the card
+function barChart(days) {
+  const max = Math.max(1, ...days.map((d) => d.liters));
+  const columns = days.map((d) => `
+    <div class="bar-col">
+      <span class="val">${d.liters}</span>
+      <div class="col" style="--h:${d.liters / max}"></div>
+      <span class="day">${d.label}</span>
+    </div>`).join("");
+  return `<div class="bars">${columns}</div>`;
+}
+
+// Line chart of the last 30 readings for one value (flow, ph, tds ...)
+function lineChart(key, color = "var(--accent)") {
+  const values = getReadings().slice(0, 30).reverse().map((r) => r[key]);
+  if (!values.length) {
+    return `<div class="chart"><svg viewBox="0 0 600 130" preserveAspectRatio="none">
+      <polyline fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke" points="0,125 600,125"/>
+    </svg></div>`;
+  }
+  const min = Math.min(...values);
+  const span = Math.max(...values) - min || 1;
+  const points = values
+    .map((v, i) => `${(i / Math.max(1, values.length - 1)) * 600},${125 - ((v - min) / span) * 110}`)
+    .join(" ");
+
+  return `<div class="chart"><svg viewBox="0 0 600 130" preserveAspectRatio="none">
+    <polyline fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke" points="${points}"/>
+  </svg></div>`;
+}
+
+// ===================== Pages =====================
+// Sidebar menu: [id, title, adminOnly]
+const MENU = [
+  ["dashboard", "Dashboard"],
+  ["quantity",  "Water Quantity"],
+  ["quality",   "Water Quality"],
+  ["history",   "History & Logs"],
+  ["alerts",    "Alerts"],
+  ["profile",   "Profile Settings"],
+  ["admin",     "Admin Panel", true],
+];
+
+const card = (title, body, extraClass = "") =>
+  `<div class="card ${extraClass}"><h2>${title}</h2>${body}</div>`;
+
+const PAGES = {
+  dashboard(latest, readings) {
+    return statusBanner(latest) + `
+      <div class="grid">
+        ${getParams().map((p) => statCard(p.label, latest[p.key], p.unit)).join("")}
+        ${statCard("Flow now", latest.flow, " L/min")}
+        ${statCard("Used today", dailyUsage()[6].liters, " L")}
+      </div>
+      <div class="grid2 fill">
+        ${card("Flow history (L/min)", lineChart("flow"))}
+        ${card("Recent readings", readingsTable(readings.slice(0, 15)))}
+      </div>`;
+  },
+
+  quantity(latest, readings) {
+    const days = dailyUsage();
+    const weekTotal = days.reduce((sum, d) => sum + d.liters, 0);
+    return `
+      <div class="grid">
+        ${statCard("Flow now", latest.flow, " L/min")}
+        ${statCard("Used today", days[6].liters, " L")}
+        ${statCard("Last 7 days", weekTotal, " L")}
+        ${statCard("Meter total", latest.total, " L")}
+      </div>
+      <div class="grid2 fill">
+        ${card("Consumption — last 7 days (L)", barChart(days))}
+        ${card("Recent readings", readingsTable(readings.slice(0, 15)))}
+      </div>`;
+  },
+
+  quality(latest) {
+    const cards = getParams().map((p) => {
+      const level = levelOf(latest[p.key], p.min, p.max);
+      const status = STATUS[level];
+      const percent = Math.max(3, Math.min(100, ((latest[p.key] - p.scaleMin) / (p.scaleMax - p.scaleMin)) * 100));
+      return `<div class="stat">
+        <span>${p.label}</span>
+        <b>${latest[p.key]}${p.unit}</b>
+        <i>Limit: ${p.min} – ${p.max}${p.unit} · <span style="color:${status.color}">${status.name}</span></i>
+        <div class="bar"><u style="width:${percent}%;background:${status.color}"></u></div>
+      </div>`;
+    }).join("");
+
+    return statusBanner(latest) + `
+      <div class="grid">${cards}</div>
+      <div class="grid2 fill">
+        ${card("pH trend", lineChart("ph"))}
+        ${card("TDS trend (ppm)", lineChart("tds", "var(--ok)"))}
+      </div>
+      <p class="muted">Safe = within limits. This system cannot detect bacteria or chemicals — do periodic lab tests.</p>`;
+  },
+
+  history(latest, readings) {
+    const body = readings.length
+      ? readingsTable(readings.slice(0, 100), true)
+      : `<p class="muted">No readings yet. New readings from the device appear here the moment they arrive.</p>`;
+    const clear = isAdmin() ? `<button class="secondary" data-action="clearReadings" ${readings.length && !demoMode ? "" : "disabled"}>Clear history</button>` : "";
+    return `<div class="card fill">
+      <div class="card-head">
+        <h2>History &amp; Logs <span class="muted">· ${demoMode ? "demo data, not saved" : readings.length + " stored"} · updates live (newest first)</span></h2>${clear}
+      </div>${body}</div>`;
+  },
+
+  alerts(latest, readings) {
+    const bad = readings.filter((r) => readingLevel(r) === 2).slice(0, 30);
+    const body = bad.length
+      ? `<div class="scroll"><table>
+           <tr><th>Time</th><th>Problem</th></tr>
+           ${bad.map((r) => `<tr><td>${formatTime(r.ts)}</td><td style="color:var(--bad)">${escapeHtml(readingProblems(r).join(", "))}</td></tr>`).join("")}
+         </table></div>`
+      : "<p>No alerts. Water has been within limits. ✅</p>";
+    return card("Alerts", body, "fill");
+  },
+
+  profile() {
+    const access = isAdmin()
+      ? "Admin: you can see all pages, change the safety limits, add or clear readings and manage accounts."
+      : "User: you can see the water status, quantity, quality, history and alerts.";
+    return `<div class="grid2 fill">
+      ${card("Profile Settings", `
+        <p class="muted">${escapeHtml(currentUser.email)} · ${currentUser.role}</p>
+        <div class="fields">
+          <label>Full name<input id="profile-name" class="wide" value="${escapeHtml(currentUser.name)}"></label>
+          <label>New password (optional)<input id="profile-password" class="wide" type="password"></label>
+        </div>
+        <div><button data-action="saveProfile">Save</button> <span id="profile-message" class="muted"></span></div>`)}
+      ${card("Your account", `
+        <p><b>${escapeHtml(currentUser.name)}</b></p>
+        <p class="muted">${access}</p>
+        <p class="muted">Readings stored: ${getReadings().length}</p>`)}
+    </div>`;
+  },
+
+  admin() {
+    const limits = getLimits();
+    const limitInputs = LIMIT_FIELDS.map(([key, label, step]) =>
+      `<label>${label}<input id="limit-${key}" type="number" step="${step}" value="${limits[key]}"></label>`).join("");
+
+    const accountRows = data.users.map((u) => `<tr>
+      <td>${escapeHtml(u.name)}</td><td>${escapeHtml(u.email)}</td><td>${u.role}</td>
+      <td>${u.email === currentUser.email
+        ? "(you)"
+        : `<button class="secondary" data-action="deleteUser" data-email="${escapeHtml(u.email)}">Delete</button>`}</td>
+    </tr>`).join("");
+
+    return `<div class="grid2 fill">
+      ${card("Safety limits", `<div class="fields">${limitInputs}</div><div><button data-action="saveLimits">Save limits</button></div>`)}
+      ${card("Accounts", `<div class="scroll"><table>
+          <tr><th>Name</th><th>Email</th><th>Role</th><th></th></tr>${accountRows}
+        </table></div>`)}
+    </div>`;
+  },
+};
+
+function render() {
+  const menu = MENU.filter(([, , adminOnly]) => !adminOnly || isAdmin());
+  if (!menu.some(([id]) => id === currentView)) currentView = "dashboard";
+
+  $("nav").innerHTML =
+    menu.map(([id, title]) => `<button data-view="${id}" class="${id === currentView ? "active" : ""}">${title}</button>`).join("") +
+    `<button data-action="logout">Logout</button>`;
+
+  const readings = getReadings();
+  const latest = readings[0] || ZERO_READING;
+  const title = menu.find(([id]) => id === currentView)[1];
+  const hasRealData = readings.length > 0 && !demoMode;
+
+  const content = PAGES[currentView](latest, readings);
+
+  const keepScroll = lastRenderedView === currentView ? $("main").querySelector(".scroll")?.scrollTop || 0 : 0;
+  lastRenderedView = currentView;
+  $("main").innerHTML = `
+    <div class="top">
+      <h1>${title}</h1>
+      <div>${statusPillHtml()}<span class="muted">${escapeHtml(currentUser.name)}</span> <span class="badge">${isAdmin() ? "Admin" : "User"}</span></div>
+    </div>
+    <div class="page">${content}</div>
+    ${hasRealData && currentView !== "profile" && currentView !== "admin" ? `<p class="muted">Last update: ${formatTime(readings[0].ts)}</p>` : ""}`;
+  const table = $("main").querySelector(".scroll");
+  if (table) table.scrollTop = keepScroll;
+  updateStatusPill();
+}
+
+// ===================== Button actions =====================
+// Run an action; show the server's error message if it fails
+async function attempt(task) {
+  try { await task(); }
+  catch (err) {
+    if (err.status === 401) showLogin();
+    else alert(err.message);
+  }
+}
+
+async function saveProfile() {
+  const name = $("profile-name").value.trim();
+  const password = $("profile-password").value;
+  const message = $("profile-message");
+  if (!name) return;
+  if (password && password.length < 6) {
+    message.textContent = "Password must be at least 6 characters.";
+    return;
+  }
+
+  try {
+    const result = await api("/me", "PUT", { name, password });
+    currentUser = result.user;
+    render();
+  } catch (err) {
+    if (err.status === 401) showLogin();
+    else message.textContent = err.message;
+  }
+}
+
+const saveLimits = () => attempt(async () => {
+  const limits = Object.fromEntries(LIMIT_FIELDS.map(([key]) => [key, +$("limit-" + key).value]));
+  await api("/limits", "PUT", limits);
+  await refreshData();
+  render();
+});
+
+const clearReadings = () => attempt(async () => {
+  if (!confirm("Delete all readings?")) return;
+  await api("/readings", "DELETE");
+  await refreshData();
+  render();
+});
+
+const deleteUser = (email) => attempt(async () => {
+  if (!confirm("Delete " + email + "?")) return;
+  await api("/users/" + encodeURIComponent(email), "DELETE");
+  await refreshData();
+  render();
+});
+
+// Actions anyone logged in can use (the server checks permissions again - this is just for the UI)
+const USER_ACTIONS = { logout, saveProfile };
+
+// Actions only admins can use
+const ADMIN_ACTIONS = {
+  saveLimits,
+  clearReadings,
+  deleteUser: (button) => deleteUser(button.dataset.email),
+};
+
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest("button");
+  if (!button || !currentUser) return;
+
+  if (button.dataset.view) {
+    currentView = button.dataset.view;
+    render();                 // show the page right away...
+    await refreshData();      // ...then update it with the freshest data
+    if (currentUser && button.dataset.view === currentView) render();
+    return;
+  }
+
+  const action = button.dataset.action;
+  if (USER_ACTIONS[action]) USER_ACTIONS[action]();
+  else if (isAdmin() && ADMIN_ACTIONS[action]) ADMIN_ACTIONS[action](button);
+});
+
+// ===================== Start =====================
+setInterval(tick, 1000);
+$("tab-login").onclick = () => setAuthMode("login");
+$("tab-signup").onclick = () => setAuthMode("signup");
+$("role").onchange = () => setAuthMode("signup");
+$("send-code").onclick = sendAdminCode;
+$("submit").onclick = submitAuth;
+
+// If the login cookie is still valid, skip the login screen
+api("/me")
+  .then((result) => startSession(result.user))
+  .catch((err) => (err.status === undefined ? startOffline() : showLogin()));
+
+  </script>
+</body>
+</html>
